@@ -1,6 +1,8 @@
 package au.unimelb.covidcare.controller;
 
 import java.math.BigDecimal;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -8,6 +10,7 @@ import java.util.logging.Logger;
 
 import javax.annotation.PostConstruct;
 
+import org.hl7.fhir.instance.model.api.IBaseDatatype;
 import org.hl7.fhir.r4.model.Address.AddressType;
 import org.hl7.fhir.r4.model.Address.AddressUse;
 import org.hl7.fhir.r4.model.Bundle;
@@ -16,6 +19,7 @@ import org.hl7.fhir.r4.model.CodeableConcept;
 import org.hl7.fhir.r4.model.Coding;
 import org.hl7.fhir.r4.model.ContactPoint;
 import org.hl7.fhir.r4.model.DateTimeType;
+import org.hl7.fhir.r4.model.DateType;
 import org.hl7.fhir.r4.model.DetectedIssue;
 import org.hl7.fhir.r4.model.DetectedIssue.DetectedIssueSeverity;
 import org.hl7.fhir.r4.model.Encounter;
@@ -106,8 +110,16 @@ public class CovidCareController {
 		patient.addIdentifier().setSystem("http://covidcare.au/app/prescription").setValue("");
 		patient.addName().addGiven(covidPatient.getName());
 		patient.setGender(Enumerations.AdministrativeGender.valueOf(covidPatient.getGender().toUpperCase()));
-		patient.addExtension(new Extension("http://validitron.unimelb.edu.au/fhir/StructureDefinition/age")
-				.setValue(new StringType(covidPatient.getAge().toString())));
+		//patient.addExtension(new Extension("http://validitron.unimelb.edu.au/fhir/StructureDefinition/age")
+		//		.setValue(new StringType(covidPatient.getAge().toString())));
+//		try {
+//			patient.setBirthDate(new SimpleDateFormat("yyyy-MM-dd").parse("2000-04-19"));
+//		} catch (ParseException e) {
+//			e.printStackTrace();
+//		}
+		//patient.set
+		//IBaseDatatype x=new DateType
+		//patient.set
 		patient.addTelecom().setUse(ContactPoint.ContactPointUse.MOBILE)
 				.setSystem(ContactPoint.ContactPointSystem.PHONE).setValue(covidPatient.getMobile());
 		patient.addTelecom().setUse(ContactPoint.ContactPointUse.HOME).setSystem(ContactPoint.ContactPointSystem.EMAIL)
@@ -189,6 +201,39 @@ public class CovidCareController {
 		});
 		LOGGER.info(covidcareidlst.toString());
 		return covidcareidlst;
+	}
+	
+	/**
+	 * [HAS TO USERD IN THE WEB CLIENT]
+	 * Get next available covid care id the registered patients in a clinic(referral).
+	 * @return
+	 */
+	@RequestMapping(value="/getnaxtavailablacovidcareid",method = RequestMethod.GET)
+	public String getNextAvailableCovidcareID() {
+		Bundle bundle = client.search().forResource(Patient.class)
+				.where(Patient.IDENTIFIER.hasSystemWithAnyCode(SYSTEM_CODE_COVIDCARE_AU_APP_PATIENT))
+				//.and(Patient.GENERAL_PRACTITIONER.hasId(referralClinicId))
+				.returnBundle(Bundle.class).execute();
+		List<String> covidcareidlst = new ArrayList<String>();
+		bundle.getEntry().forEach(entry -> {
+			if (entry.getResource() instanceof Patient) {
+				Patient patient = (Patient) entry.getResource();
+				covidcareidlst.add(patient.getIdentifier().get(0).getValue());
+			}
+		});
+		String newID=returnNextAvailableCovidcareID(covidcareidlst);
+		LOGGER.info(newID);
+		return newID;
+	}
+	
+	private String returnNextAvailableCovidcareID(List<String> covidcareIDs) {
+		List<Integer> indIDparts=new ArrayList<Integer>();
+		for (String  covidcareID: covidcareIDs) {
+			if(!covidcareID.isEmpty()&&covidcareID.startsWith("PAT")&&covidcareID.length()==8) {
+				indIDparts.add(Integer.parseInt(covidcareID.substring(3).replaceFirst("^0+(?!$)","")));
+			}
+		} 
+		return "PAT".concat(String.format("%05d", Collections.max(indIDparts)+1));
 	}
 	
 

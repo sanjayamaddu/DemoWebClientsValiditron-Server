@@ -1,10 +1,16 @@
 package au.unimelb.covidcare.test;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.List;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.MediaType;
 import org.springframework.test.context.testng.AbstractTestNGSpringContextTests;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
@@ -14,8 +20,15 @@ import org.testng.annotations.BeforeClass;
 import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Test;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 import au.unimelb.covidcare.Application;
 import au.unimelb.covidcare.controller.CovidCareController;
+import au.unimelb.covidcare.model.CovidDetectedIssue;
+import au.unimelb.covidcare.model.CovidEncounter;
+import au.unimelb.covidcare.model.CovidObservation;
+import au.unimelb.covidcare.model.CovidOrganization;
+import au.unimelb.covidcare.model.CovidPatient;
 
 
 @SpringBootTest(classes = Application.class)
@@ -72,6 +85,110 @@ public class SimpleTestCovidCareWebTest extends AbstractTestNGSpringContextTests
 	@Test
 	public void testgetEncounters() throws Exception {
 		mockMvc.perform(get("/api/getencounterlistasdisplayrow")).andExpect(status().isOk());
+	}
+	@Test
+	public void testgetnaxtavailablacovidcareid() throws Exception {
+		mockMvc.perform(get("/api/getnaxtavailablacovidcareid")).andExpect(status().isOk());
+	}
+	
+	
+	
+	@Test
+	public void testCreatePatient() throws Exception {
+		CovidOrganization covidOrganization=new CovidOrganization();
+		covidOrganization.setReferralClinicID("2152").setReferralClinicName("Kane Medical");
+		CovidPatient covidPatient=new CovidPatient(covidOrganization,"PAT01000");
+		//covidPatient.setCovidCareId("complete-data");
+		covidPatient.setName("Sandra john sister")
+		.setGender("FEMALE")
+		.setAge(49)
+		.setMobile("0401523654")
+		.setEmail("myemail@testing.con.ad")
+		.setPostcode("3214");
+		CovidObservation covidObservation=new CovidObservation();
+		covidObservation.setName("RESPIRATORY_RATE")
+		.setValue("13.56");
+		CovidObservation covidObservation1=new CovidObservation();
+		covidObservation1.setName("HEART_RATE")
+		.setValue("112.3");
+		List<CovidObservation> covidobservationLst=new ArrayList<CovidObservation>();
+		covidobservationLst.add(covidObservation);
+		covidobservationLst.add(covidObservation1);
+		covidPatient.setCovidObservationlst(covidobservationLst);
+		mockMvc.perform(post("/api/postpatient")
+				.content(asJsonString(covidPatient))
+			    .contentType(MediaType.APPLICATION_JSON)
+			    .accept(MediaType.APPLICATION_JSON))
+		.andExpect(status().isOk());
+	}
+
+	@Test
+	public void testCreateEncounter() throws Exception {
+		CovidEncounter encounter=new CovidEncounter();
+		encounter.setCovidcareID("complete-data");
+		encounter.setReasonOrPromptedBy("dashboard");
+		encounter.setCheckinDateTime(new Date());
+		//1
+		CovidObservation covidObservation=new CovidObservation();
+		covidObservation.setName("RESPIRATORY_RATE")
+		.setValue("0.000003")
+		.setEffectiveDateTime(new Date());
+		//2
+		CovidObservation covidObservation1=new CovidObservation();
+		covidObservation1.setName("HEART_RATE")
+		.setValue("0.000003")
+		.setEffectiveDateTime(new Date());
+		//3
+		CovidObservation covidObservation2=new CovidObservation();
+		covidObservation2.setName("LACK_OF_SMELL_OR_TASTE")
+		.setValue("CONSTANT")
+		.setEffectiveDateTime(new Date());
+		//4
+		CovidObservation covidObservation3=new CovidObservation();
+		covidObservation3.setName("DEPRESSED")
+		.setValue("NOTATALL")
+		.setEffectiveDateTime(new Date());
+		List<CovidObservation> covidobservationLst=new ArrayList<CovidObservation>();
+		covidobservationLst.add(covidObservation);
+		covidobservationLst.add(covidObservation1);
+		covidobservationLst.add(covidObservation2);
+		covidobservationLst.add(covidObservation3);
+		encounter.setCovidObservationlst(covidobservationLst);
+		//2 Detected issues
+		//vital
+		CovidDetectedIssue vitalcovidDetectedIssue=new CovidDetectedIssue();
+		vitalcovidDetectedIssue.setName("trendEmergency");
+		vitalcovidDetectedIssue.setEffectiveDateTime(new Date());
+		//mental
+		CovidDetectedIssue mentalCovidDetectedIssue=new CovidDetectedIssue();
+		mentalCovidDetectedIssue.setName("mentalSafe");
+		mentalCovidDetectedIssue.setEffectiveDateTime(new Date());
+		
+		List<CovidDetectedIssue> covidDetectedIssueLst=new ArrayList<CovidDetectedIssue>();
+		covidDetectedIssueLst.add(vitalcovidDetectedIssue);
+		covidDetectedIssueLst.add(mentalCovidDetectedIssue);
+		encounter.setCovidDetectedIssuelst(covidDetectedIssueLst);
+		mockMvc.perform(post("/api/postpatient")
+				.content(asJsonString(encounter))
+			    .contentType(MediaType.APPLICATION_JSON)
+			    .accept(MediaType.APPLICATION_JSON))
+		.andExpect(status().isOk());
+		
+		
+	}
+	
+	
+	/**
+	 * convert to json string.
+	 * @param obj
+	 * @return
+	 */
+	private static String asJsonString(final Object obj) {
+	    try {
+	        return new ObjectMapper().writeValueAsString(obj);
+	    } catch (Exception e) {
+	        throw new RuntimeException(e);
+	    }
 	}
 	
 	
