@@ -64,13 +64,19 @@ public class SimpleTestCovidCareWebTest extends AbstractTestNGSpringContextTests
 		mockMvc.perform(get("/api/getreferrals")).andExpect(status().isOk());
 	}
 	
+	//@Test
+	public void testgetPatientByRefferalandCovidcareID() throws Exception {
+		mockMvc.perform(get("/api/getpatientbyreferralandcovidcareid/{referralClinicId}/{covidcareid}","1858","PAT00004")).andExpect(status().isOk());
+	}
+	
+	
 
 	@Test
 	public void testgetPatients() throws Exception {
 		mockMvc.perform(get("/api/getpatients")).andExpect(status().isOk());
 	}
 	
-	@Test
+	//@Test
 	public void testgetAllCovidCardIDS() throws Exception {
 		mockMvc.perform(get("/api/getcovidcareids")).andExpect(status().isOk());
 	}
@@ -91,19 +97,27 @@ public class SimpleTestCovidCareWebTest extends AbstractTestNGSpringContextTests
 		mockMvc.perform(get("/api/getnaxtavailablacovidcareid")).andExpect(status().isOk());
 	}
 	
+	@Test
+	public void testgetObservation() throws Exception {
+		mockMvc.perform(get("/api/getobservations")).andExpect(status().isOk());
+	}
 	
+	@Test
+	public void testgetFhirLog() throws Exception {
+		mockMvc.perform(get("/api/getfhirlog")).andExpect(status().isOk());
+	}
 	
 	@Test
 	public void testCreatePatient() throws Exception {
 		CovidOrganization covidOrganization=new CovidOrganization();
 		covidOrganization.setReferralClinicID("2152").setReferralClinicName("Kane Medical");
-		CovidPatient covidPatient=new CovidPatient(covidOrganization,"PAT01000");
+		CovidPatient covidPatient=new CovidPatient(covidOrganization,"PAT01006");
 		//covidPatient.setCovidCareId("complete-data");
-		covidPatient.setName("Sandra john sister")
-		.setGender("FEMALE")
+		covidPatient.setName("printing")
+		.setGender("MALE")
 		.setAge(49)
 		.setMobile("0401523654")
-		.setEmail("myemail@testing.con.ad")
+		.setEmail("testmyemail@testing.con.ad.com")
 		.setPostcode("3214");
 		CovidObservation covidObservation=new CovidObservation();
 		covidObservation.setName("RESPIRATORY_RATE")
@@ -125,7 +139,7 @@ public class SimpleTestCovidCareWebTest extends AbstractTestNGSpringContextTests
 	@Test
 	public void testCreateEncounter() throws Exception {
 		CovidEncounter encounter=new CovidEncounter();
-		encounter.setCovidcareID("complete-data");
+		encounter.setCovidcareID("PAT01005");
 		encounter.setReasonOrPromptedBy("dashboard");
 		encounter.setCheckinDateTime(new Date());
 		//1
@@ -168,7 +182,7 @@ public class SimpleTestCovidCareWebTest extends AbstractTestNGSpringContextTests
 		covidDetectedIssueLst.add(vitalcovidDetectedIssue);
 		covidDetectedIssueLst.add(mentalCovidDetectedIssue);
 		encounter.setCovidDetectedIssuelst(covidDetectedIssueLst);
-		mockMvc.perform(post("/api/postpatient")
+		mockMvc.perform(post("/api/postencounterobservationsanddetectedissues")
 				.content(asJsonString(encounter))
 			    .contentType(MediaType.APPLICATION_JSON)
 			    .accept(MediaType.APPLICATION_JSON))

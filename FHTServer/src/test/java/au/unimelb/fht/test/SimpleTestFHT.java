@@ -71,7 +71,7 @@ public class SimpleTestFHT extends AbstractTestNGSpringContextTests {
 	
 	@Test
 	public void getalertsbysearchcriteria() throws Exception {
-		String sDate1="25/01/2021";
+		String sDate1="10/03/2021";
 		Date date1=new SimpleDateFormat("dd/MM/yyyy").parse(sDate1);
 		mockMvc.perform(post("/api/getalertsbysearchcriteria/")
 				.content(asJsonString(new SearchParameter("2152",null,null,null,null,null,"On",date1)))
@@ -83,7 +83,7 @@ public class SimpleTestFHT extends AbstractTestNGSpringContextTests {
 		
 	@Test
 	public void testfetchnewalerts() throws Exception {
-	MvcResult mvcResult=mockMvc.perform(get("/api/fetchnewalerts/{practitionerID}","1858")).andExpect(status().isOk()).andReturn();
+	MvcResult mvcResult=mockMvc.perform(get("/api/fetchnewalerts/{practitionerID}","2152")).andExpect(status().isOk()).andReturn();
 	System.out.println("Result:"+mvcResult.getResponse().getContentAsString());
 	}
 	

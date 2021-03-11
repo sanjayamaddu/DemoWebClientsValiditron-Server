@@ -1,8 +1,5 @@
 package au.unimelb.fht.controller;
 
-import java.time.Duration;
-import java.time.Instant;
-import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Collections;
@@ -26,7 +23,6 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.bind.annotation.RestController;
-
 
 import au.unimelb.fht.model.AlertDisplayRow;
 import au.unimelb.fht.model.AlertType;
@@ -84,6 +80,8 @@ public class FHTController {
 	
 	private IGenericClient client;
 	
+	private FhirContext ctx;
+	
 	@PostConstruct
 	private void createFhirContext() {
 		FhirContext ctx = FhirContext.forR4();
@@ -91,7 +89,7 @@ public class FHTController {
 		IGenericClient client = ctx.newRestfulGenericClient(serverBase);
 		client.registerInterceptor(authInterceptor);
 		this.client=client;
-		
+		this.ctx=ctx;
 	}
 	
 	
@@ -114,7 +112,7 @@ public class FHTController {
 	@RequestMapping("/getAlertsByTypeName/{typeName}")
 	public List<FHTAlert> getFHTAlertsByAlertType(@PathVariable("typeName") String typeName) {
 		Iterable<FHTAlert> fhtAlerts = alertRepository.findAllByAlertType(alertTypeRepository.findByName(typeName));
-		System.out.println(fhtAlerts);
+		LOGGER.info(fhtAlerts.toString());
 		return (List<FHTAlert>) fhtAlerts;
 
 	}
@@ -127,7 +125,7 @@ public class FHTController {
 	@RequestMapping("/getDistinctAlertsByTypeName/{typeName}")
 	public List<String> getDistinctFHTAlertsByAlertType(@PathVariable("typeName") String typeName) {
 		List<String> fhtAlerts = alertRepository.findDistinctAlertCodeByAlertType(alertTypeRepository.findByName(typeName));
-		System.out.println(fhtAlerts);
+		LOGGER.info(fhtAlerts.toString());
 		return fhtAlerts;
 
 	}
@@ -145,7 +143,7 @@ public class FHTController {
 				covidOrganizations.add(covidOrganization);
 			}
 		});
-		LOGGER.info(covidOrganizations.toString());
+		//LOGGER.info(covidOrganizations.toString());
 		return covidOrganizations;
 	}
 	
@@ -157,7 +155,7 @@ public class FHTController {
 	 */
 	@PostMapping("/getalertsbysearchcriteria/")
 	public List<AlertDisplayRow> getalertsbysearchcriteria(@RequestBody SearchParameter searchParameter) {
-		LOGGER.info(searchParameter.toString());
+		//LOGGER.info(searchParameter.toString());
 		List<FHTEncounter> encounters = new ArrayList<FHTEncounter>();
 		List<FHTEncounter> clinicrelatedencounters = new ArrayList<FHTEncounter>();
 		List<FHTEncounter> ultimateencounters = new ArrayList<FHTEncounter>();
@@ -168,19 +166,19 @@ public class FHTController {
 		List<FHTPatient> fhtPatients = null;
 		if(searchParameter!=null && searchParameter.getClinicID()!=null) {
 			if(searchParameter.getName()!=null && searchParameter.getEmail()==null && searchParameter.getPhone()==null ) {
-				fhtPatients = FHTPatientCustomRepository.findFHTPatientByClinicIDAndName(searchParameter.getClinicID(), searchParameter.getName());
+				fhtPatients = FHTPatientCustomRepository.findFHTPatientByClinicIDAndNameContains(searchParameter.getClinicID(), searchParameter.getName());
 			}else if(searchParameter.getName()==null && searchParameter.getEmail()!=null && searchParameter.getPhone()==null) {
-				fhtPatients = FHTPatientCustomRepository.findFHTPatientByClinicIDAndEmail(searchParameter.getClinicID(), searchParameter.getEmail());
+				fhtPatients = FHTPatientCustomRepository.findFHTPatientByClinicIDAndEmailContains(searchParameter.getClinicID(), searchParameter.getEmail());
 			}else if(searchParameter.getName()==null && searchParameter.getEmail()==null && searchParameter.getPhone()!=null) {
-				fhtPatients = FHTPatientCustomRepository.findFHTPatientByClinicIDAndPhone(searchParameter.getClinicID(), searchParameter.getPhone());
+				fhtPatients = FHTPatientCustomRepository.findFHTPatientByClinicIDAndPhoneContains(searchParameter.getClinicID(), searchParameter.getPhone());
 			}else if(searchParameter.getName()!=null && searchParameter.getEmail()!=null && searchParameter.getPhone()==null) {
-				fhtPatients = FHTPatientCustomRepository.findFHTPatientByClinicIDAndNameAndEmail(searchParameter.getClinicID(), searchParameter.getName(),searchParameter.getEmail());
+				fhtPatients = FHTPatientCustomRepository.findFHTPatientByClinicIDAndNameContainsAndEmailContains(searchParameter.getClinicID(), searchParameter.getName(),searchParameter.getEmail());
 			}else if(searchParameter.getName()!=null && searchParameter.getEmail()==null && searchParameter.getPhone()!=null) {
-				fhtPatients = FHTPatientCustomRepository.findFHTPatientByClinicIDAndNameAndPhone(searchParameter.getClinicID(), searchParameter.getName(),searchParameter.getPhone());
+				fhtPatients = FHTPatientCustomRepository.findFHTPatientByClinicIDAndNameContainsAndPhoneContains(searchParameter.getClinicID(), searchParameter.getName(),searchParameter.getPhone());
 			}else if(searchParameter.getName()==null && searchParameter.getEmail()!=null && searchParameter.getPhone()!=null) {
-				fhtPatients = FHTPatientCustomRepository.findFHTPatientByClinicIDAndEmailAndPhone(searchParameter.getClinicID(), searchParameter.getEmail(),searchParameter.getPhone());
+				fhtPatients = FHTPatientCustomRepository.findFHTPatientByClinicIDAndEmailContainsAndPhoneContains(searchParameter.getClinicID(), searchParameter.getEmail(),searchParameter.getPhone());
 			}else if(searchParameter.getName()!=null && searchParameter.getEmail()!=null && searchParameter.getPhone()!=null) {
-				fhtPatients = FHTPatientCustomRepository.findFHTPatientByClinicIDAndNameAndEmailAndPhone(searchParameter.getClinicID(), searchParameter.getName(),searchParameter.getEmail(),searchParameter.getPhone());
+				fhtPatients = FHTPatientCustomRepository.findFHTPatientByClinicIDAndNameContainsAndEmailContainsAndPhoneContains(searchParameter.getClinicID(), searchParameter.getName(),searchParameter.getEmail(),searchParameter.getPhone());
 			}
 		}else {
 			LOGGER.warning("No Clinical ID is set.");
@@ -256,8 +254,8 @@ public class FHTController {
 			}
 			alertdisplayrows.add(alertDisplayRow);
 		}
-		LOGGER.info("Size: "+alertdisplayrows.size());
-		LOGGER.info(alertdisplayrows.toString());
+		//LOGGER.info("Size: "+alertdisplayrows.size());
+		//LOGGER.info(alertdisplayrows.toString());
 		Collections.sort(alertdisplayrows);
 		return alertdisplayrows;
 	}
@@ -294,6 +292,26 @@ public class FHTController {
 				.where(Patient.IDENTIFIER.hasSystemWithAnyCode(SYSTEM_CODE_COVIDCARE_AU_APP_PATIENT))
 				.and(Patient.GENERAL_PRACTITIONER.hasId(practitionerID)).returnBundle(Bundle.class).execute();
 		List<FHTPatient> newPatientLst = new ArrayList<FHTPatient>();
+		newPatientLst=setPagedPatientFromBundle(bundle, newPatientLst, practitionerID);
+		LOGGER.info("First Page:"+ctx.newJsonParser().setPrettyPrint(true).encodeResourceToString(bundle));
+		while(bundle.getLink(Bundle.LINK_NEXT) != null) {
+			// load next page
+			bundle = client.loadPage().next(bundle).execute();
+			newPatientLst=setPagedPatientFromBundle(bundle, newPatientLst, practitionerID);
+			LOGGER.info("Page:"+ctx.newJsonParser().setPrettyPrint(true).encodeResourceToString(bundle));
+			}	
+		//LOGGER.info(newPatientLst.toString());
+		patientRepository.saveAll(newPatientLst);
+
+	}
+	/**
+	 * 
+	 * @param bundle
+	 * @param newPatientLst
+	 * @param practitionerID
+	 * @return
+	 */
+	private List<FHTPatient> setPagedPatientFromBundle(Bundle bundle,List<FHTPatient> newPatientLst,String practitionerID) {
 		bundle.getEntry().forEach(entry -> {
 			if (entry.getResource() instanceof Patient) {
 				Patient patient = (Patient) entry.getResource();
@@ -310,9 +328,7 @@ public class FHTController {
 				}
 			}
 		});
-		System.out.println(newPatientLst);
-		patientRepository.saveAll(newPatientLst);
-
+		return newPatientLst;
 	}
 
 	/**
@@ -326,6 +342,26 @@ public class FHTController {
 				.where(Encounter.IDENTIFIER.hasSystemWithAnyCode(SYSTEM_CODE_COVIDCARE_AU_APP_ENCOUNTER))
 				.returnBundle(Bundle.class).execute();
 		List<FHTEncounter> newFhtEncounters = new ArrayList<FHTEncounter>();
+		LOGGER.info("First Page:"+ctx.newJsonParser().setPrettyPrint(true).encodeResourceToString(bundle));
+		newFhtEncounters=setPagedEncountersFromBundle(bundle, newFhtEncounters, fhtPatient);
+		while(bundle.getLink(Bundle.LINK_NEXT) != null) {
+			// load next page
+			bundle = client.loadPage().next(bundle).execute();
+			newFhtEncounters=setPagedEncountersFromBundle(bundle, newFhtEncounters, fhtPatient);
+			LOGGER.info("Page:"+ctx.newJsonParser().setPrettyPrint(true).encodeResourceToString(bundle));
+			}	
+		//LOGGER.info(newFhtEncounters.toString());
+		encounterRepository.saveAll(newFhtEncounters);
+	}
+	
+	/**
+	 * 
+	 * @param bundle
+	 * @param newFhtEncounters
+	 * @param fhtPatient
+	 * @return
+	 */
+	private List<FHTEncounter> setPagedEncountersFromBundle(Bundle bundle,List<FHTEncounter> newFhtEncounters,FHTPatient fhtPatient) {
 		bundle.getEntry().forEach(entry -> {
 			if (entry.getResource() instanceof Encounter) {
 				Encounter encounter = (Encounter) entry.getResource();
@@ -345,8 +381,8 @@ public class FHTController {
 				}
 			}
 		});
-		System.out.println(newFhtEncounters.toString());
-		encounterRepository.saveAll(newFhtEncounters);
+		return newFhtEncounters;
+		
 	}
 	
 	/**
@@ -363,7 +399,7 @@ public class FHTController {
 		bundle.getEntry().forEach(entry -> {
 			if (entry.getResource() instanceof DetectedIssue) {
 				DetectedIssue detectedIssue = (DetectedIssue) entry.getResource();
-				// System.out.println(detectedIssue.getId());
+				// LOGGER.info(detectedIssue.getId());
 				FHTAlert fhtAlert = new FHTAlert();
 				// set code
 				if (detectedIssue.getCode().getCoding().get(0).getCode() != null) {
@@ -391,7 +427,7 @@ public class FHTController {
 				} else {
 					alertType = alertTypeRepository.findByName(FHTConstants.VITAL_SIGNS);
 				}
-				// System.out.println(alertType);
+				// LOGGER.info(alertType);
 				fhtAlert.setAlertType(alertType);
 				fhtAlert.setFhtEncounter(fhtEncounter);
 				fhtAlerts.add(fhtAlert);
