@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.logging.Logger;
 
 import javax.annotation.PostConstruct;
+import javax.servlet.http.HttpServletRequest;
 
 import org.apache.commons.lang3.time.DateUtils;
 import org.hl7.fhir.r4.model.Bundle;
@@ -27,6 +28,7 @@ import org.springframework.web.bind.annotation.RestController;
 import au.unimelb.fht.model.AlertDisplayRow;
 import au.unimelb.fht.model.AlertType;
 import au.unimelb.fht.model.CovidOrganization;
+import au.unimelb.fht.model.FHTSessionFhirLog;
 import au.unimelb.fht.model.FHTAlert;
 import au.unimelb.fht.model.FHTEncounter;
 import au.unimelb.fht.model.FHTPatient;
@@ -94,12 +96,12 @@ public class FHTController {
 	
 	
 	@RequestMapping("/fetchnewalerts/{practitionerID}")
-	public LastUpdateDetails fetchnewalerts(@PathVariable("practitionerID")String practitionerID) {
+	public LastUpdateDetails fetchnewalerts(@PathVariable("practitionerID")String practitionerID,HttpServletRequest request) {
 		setupalerttypes();
-		addnewpatients(practitionerID);
+		addnewpatients(practitionerID,request);
 		List<FHTPatient> fhtPatients= (List<FHTPatient>) patientRepository.findByclinicID(practitionerID);
 		for (FHTPatient fhtPatient : fhtPatients) {
-			setupEncountersForPatient(fhtPatient);
+			setupEncountersForPatient(fhtPatient,request);
 		}
 		return new LastUpdateDetails().setUpdated(new Date());
 	}
@@ -259,6 +261,18 @@ public class FHTController {
 		Collections.sort(alertdisplayrows);
 		return alertdisplayrows;
 	}
+	/**
+	 * Test for fhir log
+	 */
+	@RequestMapping(value="/getsessionfhirlog/{fhirmessage}",method = RequestMethod.GET)
+	public FHTSessionFhirLog getsessionfhirlog(@PathVariable String fhirmessage,HttpServletRequest request) {
+		FHTSessionFhirLog fhtSessionFhirLog=new FHTSessionFhirLog();
+		if(request!=null&& request.getSession()!=null && request.getSession().getAttribute(fhirmessage)!=null) {
+			fhtSessionFhirLog.setLog(request.getSession().getAttribute(fhirmessage).toString());
+		}
+		//LOGGER.info("INFO:"+covidSessionFhirLog.getLog());
+		return fhtSessionFhirLog;
+	}
 	
 	/**
 	 * set up the all alert types.
@@ -287,18 +301,19 @@ public class FHTController {
 	 * 
 	 * @return
 	 */
-	private void addnewpatients(String practitionerID) {
+	private void addnewpatients(String practitionerID,HttpServletRequest request) {
+		StringBuffer allMessagesGP=new StringBuffer();
 		Bundle bundle = client.search().forResource(Patient.class)
 				.where(Patient.IDENTIFIER.hasSystemWithAnyCode(SYSTEM_CODE_COVIDCARE_AU_APP_PATIENT))
 				.and(Patient.GENERAL_PRACTITIONER.hasId(practitionerID)).returnBundle(Bundle.class).execute();
 		List<FHTPatient> newPatientLst = new ArrayList<FHTPatient>();
 		newPatientLst=setPagedPatientFromBundle(bundle, newPatientLst, practitionerID);
-		LOGGER.info("First Page:"+ctx.newJsonParser().setPrettyPrint(true).encodeResourceToString(bundle));
+		saveSession(request, bundle, FHTConstants.SESSION_FHT_GETPATIENT,allMessagesGP);
 		while(bundle.getLink(Bundle.LINK_NEXT) != null) {
 			// load next page
 			bundle = client.loadPage().next(bundle).execute();
 			newPatientLst=setPagedPatientFromBundle(bundle, newPatientLst, practitionerID);
-			LOGGER.info("Page:"+ctx.newJsonParser().setPrettyPrint(true).encodeResourceToString(bundle));
+			saveSession(request, bundle, FHTConstants.SESSION_FHT_GETPATIENT,allMessagesGP);
 			}	
 		//LOGGER.info(newPatientLst.toString());
 		patientRepository.saveAll(newPatientLst);
@@ -336,19 +351,20 @@ public class FHTController {
 	 * 
 	 * @param fhtPatient
 	 */
-	private void setupEncountersForPatient(FHTPatient fhtPatient) {
+	private void setupEncountersForPatient(FHTPatient fhtPatient,HttpServletRequest request) {
+		StringBuffer allMessagesGE=new StringBuffer();
 		Bundle bundle = client.search().forResource(Encounter.class)
 				.include(Encounter.INCLUDE_SUBJECT)
 				.where(Encounter.IDENTIFIER.hasSystemWithAnyCode(SYSTEM_CODE_COVIDCARE_AU_APP_ENCOUNTER))
 				.returnBundle(Bundle.class).execute();
 		List<FHTEncounter> newFhtEncounters = new ArrayList<FHTEncounter>();
-		LOGGER.info("First Page:"+ctx.newJsonParser().setPrettyPrint(true).encodeResourceToString(bundle));
-		newFhtEncounters=setPagedEncountersFromBundle(bundle, newFhtEncounters, fhtPatient);
+		newFhtEncounters=setPagedEncountersFromBundle(bundle, newFhtEncounters, fhtPatient,request);
+		saveSession(request, bundle, FHTConstants.SESSION_FHT_GETENCOUNTERS,allMessagesGE);
 		while(bundle.getLink(Bundle.LINK_NEXT) != null) {
 			// load next page
 			bundle = client.loadPage().next(bundle).execute();
-			newFhtEncounters=setPagedEncountersFromBundle(bundle, newFhtEncounters, fhtPatient);
-			LOGGER.info("Page:"+ctx.newJsonParser().setPrettyPrint(true).encodeResourceToString(bundle));
+			newFhtEncounters=setPagedEncountersFromBundle(bundle, newFhtEncounters, fhtPatient,request);
+			saveSession(request, bundle, FHTConstants.SESSION_FHT_GETENCOUNTERS,allMessagesGE);
 			}	
 		//LOGGER.info(newFhtEncounters.toString());
 		encounterRepository.saveAll(newFhtEncounters);
@@ -361,7 +377,7 @@ public class FHTController {
 	 * @param fhtPatient
 	 * @return
 	 */
-	private List<FHTEncounter> setPagedEncountersFromBundle(Bundle bundle,List<FHTEncounter> newFhtEncounters,FHTPatient fhtPatient) {
+	private List<FHTEncounter> setPagedEncountersFromBundle(Bundle bundle,List<FHTEncounter> newFhtEncounters,FHTPatient fhtPatient,HttpServletRequest request) {
 		bundle.getEntry().forEach(entry -> {
 			if (entry.getResource() instanceof Encounter) {
 				Encounter encounter = (Encounter) entry.getResource();
@@ -376,7 +392,7 @@ public class FHTController {
 							.setFhirID(encounter.getIdElement().getIdPart())
 							.setCovidcareID(patient.getIdentifier().get(0).getValue())
 							.setReasonOrPromptedBy(encounter.getReasonCode().get(0).getCoding().get(0).getDisplay())
-							.setFhtAlerts(getAlertsByEncounterID(encounter.getIdElement().getIdPart(),fhtEncounter));
+							.setFhtAlerts(getAlertsByEncounterID(encounter.getIdElement().getIdPart(),fhtEncounter,request));
 					newFhtEncounters.add(fhtEncounter);
 				}
 			}
@@ -391,7 +407,8 @@ public class FHTController {
 	 * @param id
 	 * @return
 	 */
-	private List<FHTAlert> getAlertsByEncounterID(String id,FHTEncounter fhtEncounter) {
+	private List<FHTAlert> getAlertsByEncounterID(String id,FHTEncounter fhtEncounter,HttpServletRequest request) {
+		StringBuffer allMessagesGDE=new StringBuffer();
 		Bundle bundle = client.search().forResource(DetectedIssue.class)
 				.where(new ReferenceClientParam("implicated").hasId(id))
 				.returnBundle(Bundle.class).execute();
@@ -433,6 +450,7 @@ public class FHTController {
 				fhtAlerts.add(fhtAlert);
 			}
 		});
+		saveSession(request, bundle, FHTConstants.SESSION_FHT_GET_DETECTEDISSUE, allMessagesGDE);
 		return fhtAlerts;
 	}
 	
@@ -454,6 +472,19 @@ public class FHTController {
 
 	private boolean isAlertBasedOnMental(String alertcode) {
 		return alertcode.contains(FHTConstants.PREFIX_MENTAL);
+	}
+	
+	/**
+	 * Save session
+	 * @param model
+	 * @param request
+	 * @param bundle
+	 * @param sessionAttributeName
+	 */
+	private void saveSession(HttpServletRequest request,Bundle bundle,String sessionAttributeName,StringBuffer messages) {
+		//List<String> messages=new ArrayList<>();
+		messages.append(ctx.newJsonParser().setPrettyPrint(true).encodeResourceToString(bundle));
+		request.getSession().setAttribute(sessionAttributeName, messages);
 	}
 
 }

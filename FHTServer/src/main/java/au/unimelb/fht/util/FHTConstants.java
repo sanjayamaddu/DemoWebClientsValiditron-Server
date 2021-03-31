@@ -17,6 +17,12 @@ public static final String BEFORE = "Before";
 public static final String AFTER = "After";
 
 public static final String ON = "On";
+
+public static final String SESSION_FHT_GETPATIENT="session_fht_getpatient";
+
+public static final String SESSION_FHT_GETENCOUNTERS="session_fht_getencounters";
+
+public static final String SESSION_FHT_GET_DETECTEDISSUE="session_fht_getdetectedissue";
 	
 
 }

@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.logging.Logger;
 
 import javax.annotation.PostConstruct;
+import javax.servlet.http.HttpServletRequest;
 
 import org.hl7.fhir.instance.model.api.IBaseBundle;
 import org.hl7.fhir.r4.model.Address.AddressType;
@@ -30,6 +31,7 @@ import org.hl7.fhir.r4.model.Period;
 import org.hl7.fhir.r4.model.Quantity;
 import org.hl7.fhir.r4.model.Reference;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -43,10 +45,10 @@ import au.unimelb.covidcare.model.CovidCareNextAvailable;
 import au.unimelb.covidcare.model.CovidDetectedIssue;
 import au.unimelb.covidcare.model.CovidEncounter;
 import au.unimelb.covidcare.model.CovidEncounterDisplayRow;
-import au.unimelb.covidcare.model.CovidFhirLog;
 import au.unimelb.covidcare.model.CovidObservation;
 import au.unimelb.covidcare.model.CovidOrganization;
 import au.unimelb.covidcare.model.CovidPatient;
+import au.unimelb.covidcare.model.CovidSessionFhirLog;
 import au.unimelb.covidcare.model.ValueCodeableConcept;
 import au.unimelb.covidcare.model.ValueQuantity;
 import au.unimelb.covidcare.util.CovidConstants;
@@ -84,11 +86,11 @@ public class CovidCareController {
 	@Value("${systemcode.encounter}")
 	private String SYSTEM_CODE_COVIDCARE_AU_APP_ENCOUNTER;
 	
-	private StringBuffer stringBuffer;
-	
 	private IGenericClient client;
 	
 	private FhirContext ctx;
+	
+	//private StringBuffer allMessages=new StringBuffer();
 	
 	@PostConstruct
 	private void createFhirContext() {
@@ -98,7 +100,6 @@ public class CovidCareController {
 		client.registerInterceptor(authInterceptor);
 		this.client=client;
 		this.ctx=ctx;
-		this.stringBuffer=new StringBuffer();
 	}
 
 	/**[USERD IN THE WEB CLIENT]
@@ -107,15 +108,13 @@ public class CovidCareController {
 	 * @param covidPatient
 	 */
 	@PostMapping("/postpatient")
-	public void registerPatientWithObservations(@RequestBody CovidPatient covidPatient) {
+	public void registerPatientWithObservations(@RequestBody CovidPatient covidPatient,HttpServletRequest request) {
+		StringBuffer allMessagesCP=new StringBuffer();
 		Patient patient = new Patient();
 		patient.addIdentifier().setSystem(SYSTEM_CODE_COVIDCARE_AU_APP_PATIENT).setValue(covidPatient.getCovidCareId());
 		patient.addIdentifier().setSystem("http://covidcare.au/app/prescription").setValue("");
 		patient.addName().addGiven(covidPatient.getName());
 		patient.setGender(Enumerations.AdministrativeGender.valueOf(covidPatient.getGender().toUpperCase()));
-//		patient.addExtension(new Extension("http://validitron.unimelb.edu.au/fhir/StructureDefinition/age")
-//				.setValue(new StringType(covidPatient.getAge().toString())));
-		//release later
 		Quantity valueAge=new Quantity();
 		valueAge.setValue(covidPatient.getAge());
 		valueAge.setCode("a");
@@ -139,9 +138,9 @@ public class CovidCareController {
 				.setMethod(Bundle.HTTPVerb.POST);
 		// create Observation list and bundle them with patient.
 		createObservationsListAndBundle(covidPatient.getCovidObservationlst(), bundle, patient);
-		LOGGER.info(ctx.newJsonParser().setPrettyPrint(true).encodeResourceToString(bundle));
+		saveSession(request, bundle, CovidConstants.SESSION_CREATEPARENT,allMessagesCP);
 		Bundle resp = client.transaction().withBundle(bundle).execute();
-		LOGGER.info(ctx.newJsonParser().setPrettyPrint(true).encodeResourceToString(resp));
+		saveSession(request, resp, CovidConstants.SESSION_CREATEPARENT,allMessagesCP);
 
 	}
 
@@ -151,70 +150,26 @@ public class CovidCareController {
 	 * @return
 	 */
 	@RequestMapping(value="/getpatients",method = RequestMethod.GET)
-	public List<CovidPatient> getAllPatients() {
-		int pageCount=2;
+	public List<CovidPatient> getAllPatients(HttpServletRequest request) {
+		StringBuffer allMessagesGP=new StringBuffer();
 		Bundle bundle = client.search().forResource(Patient.class)
 				.include(Patient.INCLUDE_GENERAL_PRACTITIONER)
 				.where(Patient.IDENTIFIER.hasSystemWithAnyCode(SYSTEM_CODE_COVIDCARE_AU_APP_PATIENT))
 				.returnBundle(Bundle.class).execute();
 		List<CovidPatient> listPatients = new ArrayList<CovidPatient>();
 		listPatients=setPageEntriesFromPatientBundle(bundle, listPatients);
-		stringBuffer.append("*-*-*-* Fetch user data to populate user table *-*-*-*");
-		stringBuffer.append(ctx.newJsonParser().setPrettyPrint(true).encodeResourceToString(bundle));
-		//LOGGER.info(stringBuffer.toString());
+		saveSession(request, bundle, CovidConstants.SESSION_GETPARENTS,allMessagesGP);
 		while (bundle.getLink(IBaseBundle.LINK_NEXT) != null) {
-			// load next page
+		// load next page
 		bundle = client.loadPage().next(bundle).execute();
-		stringBuffer.append("*-*-*-* Fetch user data to populate user table *-*-*-* Page:"+pageCount);
-		pageCount++;
 		listPatients=setPageEntriesFromPatientBundle(bundle, listPatients);	
-		//LOGGER.info(stringBuffer.toString());
-		}	
+		saveSession(request, bundle, CovidConstants.SESSION_GETPARENTS,allMessagesGP);
+		}
 		Collections.sort(listPatients);
 		//LOGGER.info(listPatients.toString());
 		return listPatients;
 	}
-	
-	/**
-	 * 
-	 * @param bundle
-	 * @param listPatients
-	 * @return
-	 */
-	private List<CovidPatient> setPageEntriesFromPatientBundle(Bundle bundle,List<CovidPatient> listPatients){
-		bundle.getEntry().forEach(entry -> {
-			if (entry.getResource() instanceof Patient) {
-				Patient patient = (Patient) entry.getResource();
-				CovidOrganization covidOrganization=new CovidOrganization();
-				if(patient.getGeneralPractitioner()!=null && !patient.getGeneralPractitioner().isEmpty() ) {
-					Organization organization=(Organization)patient.getGeneralPractitioner().get(0).getResource();
-					covidOrganization.setReferralClinicID(organization.getIdElement().getIdPart()).setReferralClinicName(organization.getName());
-				}
-				CovidPatient covidPatient = new CovidPatient(covidOrganization,patient.getIdentifier().get(0).getValue());
-				covidPatient
-				.setName(patient.getName().get(0).getGivenAsSingleString())
-				.setGender(patient.getGender().getDisplay());
-				if(patient.getBirthDateElement()!=null && !patient.getBirthDateElement().isEmpty()
-				   && patient.getBirthDateElement().getExtension()!=null && !patient.getBirthDateElement().getExtension().isEmpty() ) {
-					Extension ext= patient.getBirthDateElement().getExtension().get(0);
-					Quantity qty=(Quantity)ext.getValue();
-					covidPatient.setAge((qty.getValue().intValueExact()));
-				}else {
-					covidPatient.setAge(0);
-				}
-				covidPatient
-				//.setAge(Integer.parseInt((patient.getExtension()!=null && !patient.getExtension().isEmpty())?patient.getExtension().get(0).getValue().toString():"0"))
-				.setEmail(patient.getTelecom().get(1).getValue())
-				.setMobile(patient.getTelecom().get(0).getValue())
-				.setPostcode(patient.getAddress().get(0).getPostalCode())
-				.setRegisterdDate(patient.getMeta().getLastUpdated());
-				listPatients.add(covidPatient);
-				LOGGER.info("FHIR ID:"+patient.getIdElement().getIdPart()+"CovidcareID"+covidPatient.getCovidCareId());
-			}
-		});
-		return listPatients;
-	}
-	
+
 	
 	
 	
@@ -265,25 +220,7 @@ public class CovidCareController {
 		covidCareNextAvailable.setId(newID);
 		return covidCareNextAvailable;
 	}
-	/**
-	 * 
-	 * @param covidcareIDs
-	 * @return
-	 */
-	private String returnNextAvailableCovidcareID(List<String> covidcareIDs) {
-		List<Integer> indIDparts = new ArrayList<Integer>();
-		if (covidcareIDs.size() > 0) {
-			for (String covidcareID : covidcareIDs) {
-				if (!covidcareID.isEmpty() && covidcareID.startsWith("PAT") && covidcareID.length() == 8) {
-					indIDparts.add(Integer.parseInt(covidcareID.substring(3).replaceFirst("^0+(?!$)", "")));
-				}
-			}
-			return "PAT".concat(String.format("%05d", Collections.max(indIDparts) + 1));
-		} else {
-			return new String("PAT00001");
-		}
-		
-	}
+	
 	
 
 	/**
@@ -292,7 +229,7 @@ public class CovidCareController {
 	 * @return
 	 */
 	@RequestMapping(value="/getreferrals",method = RequestMethod.GET)
-	public List<CovidOrganization> getAllReferrals() {
+	public List<CovidOrganization> getAllReferrals(HttpServletRequest request) {
 		Bundle bundle = client.search().forResource(Organization.class)
 				.returnBundle(Bundle.class).execute();
 		List<CovidOrganization> covidOrganizations = new ArrayList<CovidOrganization>();
@@ -305,7 +242,6 @@ public class CovidCareController {
 				covidOrganizations.add(covidOrganization);
 			}
 		});
-		//LOGGER.info(covidOrganizations.toString());
 		return covidOrganizations;
 	}
 	
@@ -319,13 +255,16 @@ public class CovidCareController {
 	 * @return
 	 */
 	@GetMapping("/getpatientbyreferralandcovidcareid/{referralClinicId}/{covidcareid}")
-	public CovidPatient getPatientByReferralAndCovidCareID(@PathVariable String referralClinicId,@PathVariable String covidcareid) {
+	public CovidPatient getPatientByReferralAndCovidCareID(@PathVariable String referralClinicId,@PathVariable String covidcareid,HttpServletRequest request) {
+		StringBuffer allMessagesGPByID=new StringBuffer();
 		Bundle bundle = client.search().forResource(Patient.class)
 				.include(Patient.INCLUDE_GENERAL_PRACTITIONER)
 				.where(Patient.IDENTIFIER.exactly().systemAndIdentifier(SYSTEM_CODE_COVIDCARE_AU_APP_PATIENT, covidcareid))
 				.and(Patient.GENERAL_PRACTITIONER.hasId(referralClinicId))
 				.returnBundle(Bundle.class).execute();
 		BundleEntryComponent bundleEntryComponent = bundle.getEntry().get(0);
+		//Save session
+		saveSession(request, bundle, CovidConstants.SESSION_GETPARENT_COVID_ID,allMessagesGPByID);
 		Patient patient = (Patient) bundleEntryComponent.getResource();
 		CovidOrganization covidOrganization=new CovidOrganization();
 		if(patient.getGeneralPractitioner()!=null && !patient.getGeneralPractitioner().isEmpty() ) {
@@ -365,8 +304,8 @@ public class CovidCareController {
 	 * @param covidEncounter
 	 */
 	@PostMapping("/postencounterobservationsanddetectedissues")
-	public void createEncounterObservationAndDetectedIssuesforExistingPatient(@RequestBody CovidEncounter covidEncounter) {
-		
+	public void createEncounterObservationAndDetectedIssuesforExistingPatient(@RequestBody CovidEncounter covidEncounter,HttpServletRequest request) {
+		StringBuffer allMessagesCE=new StringBuffer();
 		Bundle bundlesearch = client
 				.search().forResource(Patient.class).where(Patient.IDENTIFIER.exactly()
 						.systemAndIdentifier(SYSTEM_CODE_COVIDCARE_AU_APP_PATIENT, covidEncounter.getCovidcareID()))
@@ -379,9 +318,11 @@ public class CovidCareController {
 		bundlesave.setType(Bundle.BundleType.TRANSACTION);
 		createObservationsListAndBundleWithEncounter(covidEncounter.getCovidObservationlst(),bundlesave,patient,encounter);
 		createDetectedIssuesListAndBundleWithEncounter(covidEncounter.getCovidDetectedIssuelst(), bundlesave, patient,encounter);
-		LOGGER.info(ctx.newJsonParser().setPrettyPrint(true).encodeResourceToString(bundlesave));
+		//LOGGER.info(ctx.newJsonParser().setPrettyPrint(true).encodeResourceToString(bundlesave));
+		saveSession(request, bundlesave, CovidConstants.SESSION_CREATE_CHECKIN,allMessagesCE);
 		Bundle resp = client.transaction().withBundle(bundlesave).execute();
-		LOGGER.info(ctx.newJsonParser().setPrettyPrint(true).encodeResourceToString(resp));
+		saveSession(request, resp, CovidConstants.SESSION_CREATE_CHECKIN,allMessagesCE);
+		//LOGGER.info(ctx.newJsonParser().setPrettyPrint(true).encodeResourceToString(resp));
 		
 	}
 	
@@ -391,23 +332,85 @@ public class CovidCareController {
 	 * @return
 	 */
 	@RequestMapping(value = "/getencounterlistasdisplayrow", method = RequestMethod.GET)
-	public List<CovidEncounterDisplayRow> getEncounterListAsDisplaRow() {
+	public List<CovidEncounterDisplayRow> getEncounterListAsDisplaRow(HttpServletRequest request) {
+		StringBuffer allMessagesGE=new StringBuffer();
 		Bundle bundle = client.search().forResource(Encounter.class).include(Encounter.INCLUDE_SUBJECT)
 				.where(Patient.IDENTIFIER.hasSystemWithAnyCode(SYSTEM_CODE_COVIDCARE_AU_APP_ENCOUNTER))
 				.returnBundle(Bundle.class).execute();
 		List<CovidEncounterDisplayRow> covidEncounterDisplayRows = new ArrayList<CovidEncounterDisplayRow>();
 		covidEncounterDisplayRows = setPageEntriesFromEncounterBundle(bundle, covidEncounterDisplayRows);
-		LOGGER.info("First Page:"+ctx.newJsonParser().setPrettyPrint(true).encodeResourceToString(bundle));
+		saveSession(request, bundle, CovidConstants.SESSION_GETENCOUNTERS,allMessagesGE);
 		// Load the subsequent pages
 		while (bundle.getLink(IBaseBundle.LINK_NEXT) != null) {
 			// load next page
 			bundle = client.loadPage().next(bundle).execute();
 			covidEncounterDisplayRows = setPageEntriesFromEncounterBundle(bundle, covidEncounterDisplayRows);
-			LOGGER.info("Page:"+ctx.newJsonParser().setPrettyPrint(true).encodeResourceToString(bundle));
+			saveSession(request, bundle, CovidConstants.SESSION_GETENCOUNTERS,allMessagesGE);
 		}
 		Collections.sort(covidEncounterDisplayRows);
 		//LOGGER.info(covidEncounterDisplayRows.toString());
 		return covidEncounterDisplayRows;
+	}
+	
+	
+	/**
+	 * [USERD IN THE WEB CLIENT]
+	 * 
+	 * Get Encounter by res id.
+	 * @param resID
+	 * @return
+	 */
+	@GetMapping("/getencounterbyresourceid/{resID}")
+	public CovidEncounter getEncounterByResID(@PathVariable("resID") String resID,HttpServletRequest request) {
+		StringBuffer allMessagesGEByID=new StringBuffer();
+		Bundle bundle = client.search().forResource(Encounter.class)
+				.include(Encounter.INCLUDE_PATIENT)
+				.where(Encounter.IDENTIFIER.hasSystemWithAnyCode(SYSTEM_CODE_COVIDCARE_AU_APP_ENCOUNTER))
+				.and(Encounter.RES_ID.exactly().code(resID))
+				.returnBundle(Bundle.class).execute();
+		BundleEntryComponent bundleEntryComponent = bundle.getEntry().get(0);
+		//Save session
+		saveSession(request, bundle, CovidConstants.SESSION_GETENCOUNTER_FHIR_ID,allMessagesGEByID);
+		Encounter encounter = (Encounter) bundleEntryComponent.getResource();
+		Patient patient=(Patient)encounter.getSubject().getResource();
+		CovidEncounter covidEncounter = new CovidEncounter();
+				covidEncounter
+				.setCheckInID(encounter.getIdElement().getIdPart())
+				.setCheckinDateTime(encounter.getPeriod().getEnd())
+				.setCovidcareID(patient.getIdentifier().get(0).getValue())
+				.setReasonOrPromptedBy(encounter.getReasonCode().get(0).getCoding().get(0).getDisplay())
+				.setCovidObservationlst(getObservationsByEncounterID(encounter.getIdElement().getIdPart()))
+				.setCovidDetectedIssuelst(getDetectedIssuesByEncounterID(encounter.getIdElement().getIdPart()));
+		//LOGGER.info(covidEncounter.toString());
+		return covidEncounter;
+	}
+	/**
+	 * Test for all observation by paging
+	 */
+	@RequestMapping(value="/getobservations",method = RequestMethod.GET)
+	public void getAllObservations() {
+		Bundle bundle = client.search().forResource(Observation.class)
+				.include(Observation.INCLUDE_PATIENT)
+				.returnBundle(Bundle.class).execute();
+				bundle.getEntry().forEach(entry -> {
+			if (entry.getResource() instanceof Observation) {
+				Observation observation = (Observation) entry.getResource();
+			
+			}
+			});
+	}
+	
+	/**
+	 * Test for fhir log
+	 */
+	@RequestMapping(value="/getsessionfhirlog/{fhirmessage}",method = RequestMethod.GET)
+	public CovidSessionFhirLog getsessionfhirlog(@PathVariable String fhirmessage,HttpServletRequest request) {
+		CovidSessionFhirLog covidSessionFhirLog=new CovidSessionFhirLog();
+		if(request!=null&& request.getSession()!=null && request.getSession().getAttribute(fhirmessage)!=null) {
+			covidSessionFhirLog.setLog(request.getSession().getAttribute(fhirmessage).toString());
+		}
+		//LOGGER.info("INFO:"+covidSessionFhirLog.getLog());
+		return covidSessionFhirLog;
 	}
 	/**
 	 * 
@@ -444,57 +447,79 @@ public class CovidCareController {
 		});
 		return covidEncounterDisplayRows;
 	}
-	
 	/**
-	 * [USERD IN THE WEB CLIENT]
 	 * 
-	 * Get Encounter by res id.
-	 * @param resID
+	 * @param covidcareIDs
 	 * @return
 	 */
-	@GetMapping("/getencounterbyresourceid/{resID}")
-	public CovidEncounter getEncounterByResID(@PathVariable("resID") String resID) {
-		Bundle bundle = client.search().forResource(Encounter.class)
-				.include(Encounter.INCLUDE_PATIENT)
-				.where(Encounter.IDENTIFIER.hasSystemWithAnyCode(SYSTEM_CODE_COVIDCARE_AU_APP_ENCOUNTER))
-				.and(Encounter.RES_ID.exactly().code(resID))
-				.returnBundle(Bundle.class).execute();
-		BundleEntryComponent bundleEntryComponent = bundle.getEntry().get(0);
-		Encounter encounter = (Encounter) bundleEntryComponent.getResource();
-		Patient patient=(Patient)encounter.getSubject().getResource();
-		CovidEncounter covidEncounter = new CovidEncounter();
-				covidEncounter
-				.setCheckInID(encounter.getIdElement().getIdPart())
-				.setCheckinDateTime(encounter.getPeriod().getEnd())
-				.setCovidcareID(patient.getIdentifier().get(0).getValue())
-				.setReasonOrPromptedBy(encounter.getReasonCode().get(0).getCoding().get(0).getDisplay())
-				.setCovidObservationlst(getObservationsByEncounterID(encounter.getIdElement().getIdPart()))
-				.setCovidDetectedIssuelst(getDetectedIssuesByEncounterID(encounter.getIdElement().getIdPart()));
-		//LOGGER.info(covidEncounter.toString());
-		return covidEncounter;
-	}
-	/**
-	 * Test for all observation by paging
-	 */
-	@RequestMapping(value="/getobservations",method = RequestMethod.GET)
-	public void getAllObservations() {
-		Bundle bundle = client.search().forResource(Observation.class)
-				.include(Observation.INCLUDE_PATIENT)
-				.returnBundle(Bundle.class).execute();
-				bundle.getEntry().forEach(entry -> {
-			if (entry.getResource() instanceof Observation) {
-				Observation observation = (Observation) entry.getResource();
-			
+	private String returnNextAvailableCovidcareID(List<String> covidcareIDs) {
+		List<Integer> indIDparts = new ArrayList<Integer>();
+		if (covidcareIDs.size() > 0) {
+			for (String covidcareID : covidcareIDs) {
+				if (!covidcareID.isEmpty() && covidcareID.startsWith("PAT") && covidcareID.length() == 8) {
+					indIDparts.add(Integer.parseInt(covidcareID.substring(3).replaceFirst("^0+(?!$)", "")));
+				}
 			}
-			});
+			return "PAT".concat(String.format("%05d", Collections.max(indIDparts) + 1));
+		} else {
+			return new String("PAT00001");
+		}
+		
 	}
 	
-	@RequestMapping(value="/getfhirlog",method = RequestMethod.GET)
-	public CovidFhirLog getFHIRLog() {
-		CovidFhirLog covidFhirLog=new CovidFhirLog();
-		covidFhirLog.setLog(stringBuffer.toString());
-		LOGGER.info(stringBuffer.toString());
-		return covidFhirLog;
+	/**
+	 * Save session
+	 * @param model
+	 * @param request
+	 * @param bundle
+	 * @param sessionAttributeName
+	 */
+	private void saveSession(HttpServletRequest request,Bundle bundle,String sessionAttributeName,StringBuffer allMessages) {
+		//List<String> messages=new ArrayList<>();
+		allMessages.append(ctx.newJsonParser().setPrettyPrint(true).encodeResourceToString(bundle));
+		request.getSession().setAttribute(sessionAttributeName, allMessages);
+	}
+	
+	
+	
+	/**
+	 * 
+	 * @param bundle
+	 * @param listPatients
+	 * @return
+	 */
+	private List<CovidPatient> setPageEntriesFromPatientBundle(Bundle bundle,List<CovidPatient> listPatients){
+		bundle.getEntry().forEach(entry -> {
+			if (entry.getResource() instanceof Patient) {
+				Patient patient = (Patient) entry.getResource();
+				CovidOrganization covidOrganization=new CovidOrganization();
+				if(patient.getGeneralPractitioner()!=null && !patient.getGeneralPractitioner().isEmpty() ) {
+					Organization organization=(Organization)patient.getGeneralPractitioner().get(0).getResource();
+					covidOrganization.setReferralClinicID(organization.getIdElement().getIdPart()).setReferralClinicName(organization.getName());
+				}
+				CovidPatient covidPatient = new CovidPatient(covidOrganization,patient.getIdentifier().get(0).getValue());
+				covidPatient
+				.setName(patient.getName().get(0).getGivenAsSingleString())
+				.setGender(patient.getGender().getDisplay());
+				if(patient.getBirthDateElement()!=null && !patient.getBirthDateElement().isEmpty()
+				   && patient.getBirthDateElement().getExtension()!=null && !patient.getBirthDateElement().getExtension().isEmpty() ) {
+					Extension ext= patient.getBirthDateElement().getExtension().get(0);
+					Quantity qty=(Quantity)ext.getValue();
+					covidPatient.setAge((qty.getValue().intValueExact()));
+				}else {
+					covidPatient.setAge(0);
+				}
+				covidPatient
+				//.setAge(Integer.parseInt((patient.getExtension()!=null && !patient.getExtension().isEmpty())?patient.getExtension().get(0).getValue().toString():"0"))
+				.setEmail(patient.getTelecom().get(1).getValue())
+				.setMobile(patient.getTelecom().get(0).getValue())
+				.setPostcode(patient.getAddress().get(0).getPostalCode())
+				.setRegisterdDate(patient.getMeta().getLastUpdated());
+				listPatients.add(covidPatient);
+				LOGGER.info("FHIR ID:"+patient.getIdElement().getIdPart()+"CovidcareID"+covidPatient.getCovidCareId());
+			}
+		});
+		return listPatients;
 	}
 	
 	

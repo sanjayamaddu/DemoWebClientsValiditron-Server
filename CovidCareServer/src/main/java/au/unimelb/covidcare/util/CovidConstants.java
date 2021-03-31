@@ -22,6 +22,26 @@ public class CovidConstants {
 	
 	public static final String PREFIX_MENTAL = "mental";
 	
+	//	Fetches in the service
+	
+	public static final String SESSION_GETPARENTS="session_getparents";
+	
+	public static final String SESSION_GETENCOUNTERS="session_getencounters";
+	
+	public static final String SESSION_GETPARENT_COVID_ID="session_getparent_covid_id";
+	
+	public static final String SESSION_GETENCOUNTER_FHIR_ID="session_getencounter_fhir_id";
+	
+	
+	public static final String SESSION_CREATEPARENT="session_createparent";
+	
+	//public static final String SESSION_CREATEPARENT_RESPONSE="session_createparent_response";
+	
+	public static final String SESSION_CREATE_CHECKIN="session_createcheckin";
+	
+	//public static final String SESSION_CREATE_CHECKIN_RESPONSE="session_createcheckin_response";
+	
+	
 	public static String getCode(String value) {
 		if(value.equals(DASHBOARD)) {
 			return 	CHECKIN_REASONCODE_CODE_DASHBOARD;
